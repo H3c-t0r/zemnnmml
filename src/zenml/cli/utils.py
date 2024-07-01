@@ -44,11 +44,13 @@ import pkg_resources
 import yaml
 from pydantic import BaseModel, SecretStr
 from rich import box, table
+from rich.console import Console
 from rich.emoji import Emoji, NoEmoji
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.style import Style
+from rich.table import Table
 
 from zenml.client import Client
 from zenml.console import console, zenml_style_defaults
@@ -1277,9 +1279,11 @@ def pretty_print_model_version_table(
             "NAME": model_version.registered_model.name,
             "MODEL_VERSION": model_version.version,
             "VERSION_DESCRIPTION": model_version.description,
-            "METADATA": model_version.metadata.model_dump()
-            if model_version.metadata
-            else {},
+            "METADATA": (
+                model_version.metadata.model_dump()
+                if model_version.metadata
+                else {}
+            ),
         }
         for model_version in model_versions
     ]
@@ -1319,9 +1323,11 @@ def pretty_print_model_version_details(
             if model_version.last_updated_at
             else "N/A"
         ),
-        "METADATA": model_version.metadata.model_dump()
-        if model_version.metadata
-        else {},
+        "METADATA": (
+            model_version.metadata.model_dump()
+            if model_version.metadata
+            else {}
+        ),
         "MODEL_SOURCE_URI": model_version.model_source_uri,
         "STAGE": model_version.stage.value,
     }
@@ -2749,6 +2755,64 @@ def is_jupyter_installed() -> bool:
         return True
     except pkg_resources.DistributionNotFound:
         return False
+
+
+def multi_choice_prompt(
+    object_type: str,
+    choices: List[List[Any]],
+    headers: List[str],
+    prompt_text: str,
+    allow_zero_be_a_new_object: bool = False,
+    default_choice: Optional[str] = None,
+) -> Optional[int]:
+    """Prompts the user to select a choice from a list of choices.
+
+    Args:
+        object_type: The type of the object
+        choices: The list of choices
+        prompt_text: The prompt text
+        headers: The list of headers.
+        allow_zero_be_a_new_object: Whether to allow zero as a new object
+        default_choice: The default choice
+
+    Returns:
+        The selected choice index or None for new object
+    """
+    table = Table(
+        title=f"Available {object_type}",
+        show_header=True,
+        border_style=None,
+        expand=True,
+        show_lines=True,
+    )
+    table.add_column("Choice", justify="left", width=1)
+    for h in headers:
+        table.add_column(
+            h.replace("_", " ").capitalize(), justify="left", width=10
+        )
+
+    i_shift = 0
+    if allow_zero_be_a_new_object:
+        i_shift = 1
+        table.add_row(
+            "[0]",
+            *([f"Create a new {object_type}"] * len(headers)),
+        )
+    for i, one_choice in enumerate(choices):
+        table.add_row(f"[{i+i_shift}]", *[str(x) for x in one_choice])
+    Console().print(table)
+
+    selected = Prompt.ask(
+        prompt_text,
+        choices=[str(i) for i in range(0, len(choices) + 1)],
+        default=default_choice,
+        show_choices=False,
+    )
+
+    if selected == "0" and allow_zero_be_a_new_object:
+        return None
+    else:
+        return int(selected) - i_shift
 
 
 def requires_mac_env_var_warning() -> bool:
